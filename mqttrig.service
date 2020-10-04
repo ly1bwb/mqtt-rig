@@ -1,0 +1,14 @@
+[Unit]
+Description=Hamlib to MQTT proxy
+After=rigctld.service rotctld.service network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=ly1bwb
+WorkingDir=/etc/scripts/mqttrig
+ExecStart=/bin/sh -c 'cd /etc/scripts/mqttrig && /usr/bin/perl /etc/scripts/mqttrig/mqttrig.pl'
+
+[Install]
+WantedBy=multi-user.target
