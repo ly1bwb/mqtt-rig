@@ -6,31 +6,46 @@
 # perl-hamlib required
 #
 use strict;
-#use warnings;
+use warnings;
 
 use lib '.';
 
 use Hamlib;
-use Net::MQTT::Simple "mqtt.vurk"; # hostas
+use Net::MQTT::Simple;
 
+# mosquitto server
+my $mqtt_host = "mqtt.vurk";
 
 # MQTT topikai
 my $radio_topic_path="VURK/radio/FT857/";
 my $rotator_topic_path="VURK/rotator/vhf/";
 
+my $radio_set_topic_path="VURK/radio/FT857/";
+my $rotator_set_topic_path="VURK/rotator/vhf/set/";
+
+# rigctl -h
 my $radio_type = 2; 			# 2 - network
 my $radio_path = "127.0.0.1:4532"; 	# path or host
 
+#rotctl -h
 my $rotator_type = 2; 			# 2 - network
 my $rotator_path = "127.0.0.1:4533"; 	# path or host
 
+# limits for set command
+my $min_azimuth = 0;
+my $max_azimuth = 360;
+
+my $min_elevation = 0;
+my $max_elevation = 90;
 
 my $loop = 1;
 my $rig_update_interval = 5; # in seconds
-my $rot_update_interval = 1; # in seconds
+my $rot_update_interval = 2; # in seconds
 my $print_interval      = 1; # print stats every n seconds
 
-my $quiet = 0;
+# do not output anything - for use as a service
+my $quiet = 1; 
+my $is_a_service = 0; # die if something disconnects
 
 my $rig_in_use = 1;
 my $rot_in_use = 1;
@@ -42,7 +57,10 @@ if ($rig_in_use == 0 && $rot_in_use == 0){
     die "no point to continue when rig and rotator is not in use";
 }
 
-# nustatom debug levelius hamlibui
+my $mqtt = Net::MQTT::Simple->new($mqtt_host);
+
+
+# set debug levels for hamlib
 Hamlib::rig_set_debug($Hamlib::RIG_DEBUG_NONE);
 
 my $rig;
@@ -55,7 +73,6 @@ $SIG{INT} = sub {
     exit 0;
 };
 
-
 if ($rig_in_use) { $rig=rig_open($radio_type, $radio_path);     }
 if ($rot_in_use) { $rot=rot_open($rotator_type, $rotator_path); }
 
@@ -63,8 +80,14 @@ my ($freq, $mode, $passband, $ptt, $azimuth, $elevation, $direction);
 my $rotator_connected = 0;
 my $rig_connected 	  = 0;
 my $counter=0;
+
+# subscribe to "set" topic
+$mqtt->subscribe($rotator_set_topic_path . "azimuth",  \&set_azimuth);
+$mqtt->subscribe($rotator_set_topic_path . "elevation", \&set_elevation);
+
 while($loop){
     $counter++;
+    $mqtt->tick();	# check if there are waiting subscribed messages 
 
     #get data only if rig is in use and connected
     if ($rig_in_use && $rig->{state}->{comm_state}==1 &&($counter % $rig_update_interval == 0)){
@@ -75,11 +98,19 @@ while($loop){
 	mqtt_publish_radio($freq, $mode, $passband, $ptt);
     }
     #get data only if rotator is in use and connected
-    if ($rot_in_use && $rot->{state}->{comm_state}==1 &&($counter % $rot_update_interval == 0)){
-	($azimuth, $elevation)	= get_position($rot);
-	$direction = &azimuth_to_direction($azimuth);
-	$rotator_connected 	= $rot->{state}->{comm_state};
-	mqtt_publish_rotator($azimuth, $elevation, $direction);
+    if ($rot_in_use  &&($counter % $rot_update_interval == 0)){
+	if ($rot->{state}->{comm_state}==1){
+	    ($azimuth, $elevation)	= get_position($rot);
+	    $direction = &azimuth_to_direction($azimuth);
+	    $rotator_connected 	= $rot->{state}->{comm_state};
+	    mqtt_publish_rotator($azimuth, $elevation, $direction);
+	} else {
+	if ($is_a_service == 1) { die "Rotator disconnected, restart required"; }
+	 
+	# do reconnect, which does not work
+#		rot_close($rot);
+#		$rot=rot_open($rotator_type, $rotator_path); 
+	    }
     }
 
     if (!$quiet && ($counter % $print_interval == 0)) {
@@ -92,6 +123,7 @@ while($loop){
 	print "Azimuth/el    : $azimuth ($direction) / $elevation\n";
     }
 
+
 sleep 1;
 }
 
@@ -99,6 +131,7 @@ rot_close($rot);
 rig_close($rig);
 
 exit;
+
 
 
 #
@@ -116,7 +149,6 @@ sub rig_open(){
 #    print "ret_code: '$ret_code'\n";
     return $rig;
 }
-
 
 sub rot_open(){
     my $model = shift;
@@ -154,25 +186,27 @@ sub get_position{
     return($azimuth, $elevation);
 }
 
+
 # grazina ptt busena, reikia rig
 sub get_ptt{
 return shift->get_ptt();
 }
 
+
 #    mqtt_publish_radio($freq, $mode, $passband, $ptt);
 sub mqtt_publish_radio{
-    publish $radio_topic_path . "frequency" 	=> shift;
-    publish $radio_topic_path . "mode" 		=> shift;
-    publish $radio_topic_path . "passband" 	=> shift;
-    publish $radio_topic_path . "ptt" 		=> shift;
+    $mqtt->publish($radio_topic_path . "frequency" 	=> shift);
+    $mqtt->publish($radio_topic_path . "mode" 		=> shift);
+    $mqtt->publish($radio_topic_path . "passband" 	=> shift);
+    $mqtt->publish($radio_topic_path . "ptt" 		=> shift);
 }
 
 
 #    mqtt_publish_rotator($azimuth, $elevation, $direction);
 sub mqtt_publish_rotator{
-    publish $rotator_topic_path . "azimuth" 	=> shift;
-    publish $rotator_topic_path . "elevation" 	=> shift;
-    publish $rotator_topic_path . "direction" 	=> shift;
+    $mqtt->publish($rotator_topic_path . "azimuth" 	=> shift);
+    $mqtt->publish($rotator_topic_path . "elevation" 	=> shift);
+    $mqtt->publish($rotator_topic_path . "direction" 	=> shift);
 }
 
 # simple azimuth to direction conversion
@@ -188,6 +222,32 @@ sub azimuth_to_direction{
     return $direction;
 }
 
+
+sub set_azimuth{
+    my ($topic, $message) = @_;
+    if (!$quiet) {print "$topic -> $message\n";}
+    if (!( $message =~ /^-?\d+$/)) {
+	if (!$quiet) { print "'$message' is not a digit"; }
+	return;
+    }  
+    if (($message >= $min_azimuth) && ($message <= $max_azimuth)) {
+	my ($azimuth, $elevation)= $rot->get_position();
+	$rot->set_position($message, $elevation);
+    }
+}
+
+sub set_elevation{
+    my ($topic, $message) = @_;
+    if (!$quiet) {print "$topic -> $message\n";}
+    if (!( $message =~ /^-?\d+$/)) {
+	if (!$quiet) { print "'$message' is not a digit"; }
+	return;
+    }
+    if (($message >= $min_elevation) && ($message <= $max_elevation)) {
+	my ($azimuth, $elevation)= $rot->get_position();
+	$rot->set_position($azimuth, $message);
+    }
+}
 
 sub test_directions{
     my $step=shift;
