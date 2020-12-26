@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 #
 # Script gets data from rig and rotator using hamlib2, then publishes it to mqtt server.
-# Script gets data from mqtt server and sends to 
+# Script gets data from mqtt server and sends to hamlib2 servers 
 # Vilius LY3FF, 2020
 #
 # perl-hamlib required
