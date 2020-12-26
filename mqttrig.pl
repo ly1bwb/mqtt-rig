@@ -1,12 +1,13 @@
 #!/usr/bin/perl
 #
-# Script gets data from rig and rotator using hamlib2 and publishes to mqtt server.
+# Script gets data from rig and rotator using hamlib2, then publishes it to mqtt server.
+# Script gets data from mqtt server and sends to 
 # Vilius LY3FF, 2020
 #
 # perl-hamlib required
 #
 use strict;
-use warnings;
+#use warnings;
 
 use lib '.';
 
@@ -17,10 +18,10 @@ use Net::MQTT::Simple;
 my $mqtt_host = "mqtt.vurk";
 
 # MQTT topikai
-my $radio_topic_path="VURK/radio/FT857/";
+my $radio_topic_path="VURK/radio/FT847/";
 my $rotator_topic_path="VURK/rotator/vhf/";
 
-my $radio_set_topic_path="VURK/radio/FT857/";
+my $radio_set_topic_path="VURK/radio/FT847/";
 my $rotator_set_topic_path="VURK/rotator/vhf/set/";
 
 # rigctl -h
