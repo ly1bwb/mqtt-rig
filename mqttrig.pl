@@ -13,9 +13,13 @@ use lib '.';
 
 use Hamlib;
 use Net::MQTT::Simple;
+use Time::HiRes qw( usleep ualarm gettimeofday tv_interval nanosleep
+                    clock_gettime clock_getres clock_nanosleep clock
+                    stat lstat utime sleep);
 
 # mosquitto server
-my $mqtt_host = "mqtt.vurk";
+#my $mqtt_host = "mqtt.vurk";
+my $mqtt_host = "mqtt.seskai.lan";
 
 # MQTT topikai
 my $radio_topic_path="VURK/radio/FT847/";
@@ -49,7 +53,7 @@ my $rot_update_interval = 2; # in seconds
 my $print_interval      = 1; # print stats every n seconds
 
 # do not output anything - for use as a service
-my $quiet = 1; 
+my $quiet = 0; 
 my $is_a_service = 0; # die if something disconnects
 
 my $rig_in_use = 1;
@@ -87,33 +91,32 @@ my $rig_connected 	  = 0;
 my $counter=0;
 
 # subscribe to rotator's "set" topic
-$mqtt->subscribe($rotator_set_topic_path . "azimuth",  \&set_azimuth);
-$mqtt->subscribe($rotator_set_topic_path . "elevation", \&set_elevation);
+if ($rot_in_use) {
+    $mqtt->subscribe($rotator_set_topic_path . "azimuth",  \&set_azimuth);
+    $mqtt->subscribe($rotator_set_topic_path . "elevation", \&set_elevation);
+    $mqtt->subscribe($rotator_topic_path . "refresh", \&get_rotator_state);
+}
 
 # subscribe to radio's "set" topic
-$mqtt->subscribe($radio_set_topic_path . "frequency",  \&set_freq);
-$mqtt->subscribe($radio_set_topic_path . "mode", \&set_mode);
-$mqtt->subscribe($radio_set_topic_path . "ptt", \&set_ptt);
-
+if ($rig_in_use){
+    $mqtt->subscribe($radio_set_topic_path . "frequency",  \&set_freq);
+    $mqtt->subscribe($radio_set_topic_path . "mode", \&set_mode);
+    $mqtt->subscribe($radio_set_topic_path . "ptt", \&set_ptt);
+    $mqtt->subscribe($radio_topic_path . "refresh", \&get_radio_state);
+}
 while($loop){
     $counter++;
     $mqtt->tick();	# check if there are waiting subscribed messages 
 
     #get data only if rig is in use and connected
     if ($rig_in_use && $rig->{state}->{comm_state}==1 &&($counter % $rig_update_interval == 0)){
-	$freq 			= get_freq($rig);
-	($mode, $passband) 	= get_mode($rig);
-	$ptt 			= get_ptt($rig);
-	$rig_connected 		= $rig->{state}->{comm_state};
-	mqtt_publish_radio($freq, $mode, $passband, $ptt);
+	($freq, $mode, $passband, $ptt, $rig_connected) = get_radio_state($rig);
     }
     #get data only if rotator is in use and connected
     if ($rot_in_use  &&($counter % $rot_update_interval == 0)){
 	if ($rot->{state}->{comm_state}==1){
-	    ($azimuth, $elevation)	= get_position($rot);
-	    $direction = &azimuth_to_direction($azimuth);
+	    ($azimuth, $elevation, $direction) = get_rotator_state($rot);
 	    $rotator_connected 	= $rot->{state}->{comm_state};
-	    mqtt_publish_rotator($azimuth, $elevation, $direction);
 	} else {
 	if ($is_a_service == 1) { die "Rotator disconnected, restart required"; }
 	 
@@ -134,7 +137,7 @@ while($loop){
     }
 
 
-sleep 1;
+sleep (0.25);
 }
 
 rot_close($rot);
@@ -179,6 +182,29 @@ sub rig_close(){
 sub rot_close(){
     Hamlib::Rot::close(shift);
 }
+
+sub get_radio_state(){
+    my $rig = shift;
+    my $rig_connected 		= $rig->{state}->{comm_state};
+    if (!$rig_connected) {return};
+    my $freq 			= get_freq($rig);
+    my ($mode, $passband) 	= get_mode($rig);
+    my $ptt 			= get_ptt($rig);
+    mqtt_publish_radio($freq, $mode, $passband, $ptt);
+    return($freq, $mode, $passband, $ptt, $rig_connected);
+}
+
+sub get_rotator_state(){
+    my $rot = shift;
+    my $rotator_connected 	= $rot->{state}->{comm_state};
+    if (!$rotator_connected) {return};
+    my ($azimuth, $elevation)	= get_position($rot);
+    my $direction = &azimuth_to_direction($azimuth);
+    mqtt_publish_rotator($azimuth, $elevation, $direction);
+    return($azimuth, $elevation, $direction, $rotator_connected);
+
+}
+
 
 #get_freq($rig)
 sub get_freq{
