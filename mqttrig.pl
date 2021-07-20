@@ -39,6 +39,10 @@ my $max_azimuth = 360;
 my $min_elevation = 0;
 my $max_elevation = 90;
 
+
+my $radio_set_ptt_control_enabled = 0; #  if 1, then PTT control is enabled
+my $radio_set_ptt_on_enabled = 0; # (!!)  if set to 1, then ability to set PTT to ON will be enabled.
+
 my $loop = 1;
 my $rig_update_interval = 5; # in seconds
 my $rot_update_interval = 2; # in seconds
@@ -82,9 +86,14 @@ my $rotator_connected = 0;
 my $rig_connected 	  = 0;
 my $counter=0;
 
-# subscribe to "set" topic
+# subscribe to rotator's "set" topic
 $mqtt->subscribe($rotator_set_topic_path . "azimuth",  \&set_azimuth);
 $mqtt->subscribe($rotator_set_topic_path . "elevation", \&set_elevation);
+
+# subscribe to radio's "set" topic
+$mqtt->subscribe($radio_set_topic_path . "frequency",  \&set_freq);
+$mqtt->subscribe($radio_set_topic_path . "mode", \&set_mode);
+$mqtt->subscribe($radio_set_topic_path . "ptt", \&set_ptt);
 
 while($loop){
     $counter++;
@@ -182,16 +191,17 @@ sub get_mode{
     return($txtMode, $pass);
 }
 
+# grazina ptt busena, reikia rig
+sub get_ptt{
+return shift->get_ptt();
+}
+
 sub get_position{
     my ($azimuth, $elevation)= shift->get_position();
     return($azimuth, $elevation);
 }
 
 
-# grazina ptt busena, reikia rig
-sub get_ptt{
-return shift->get_ptt();
-}
 
 
 #    mqtt_publish_radio($freq, $mode, $passband, $ptt);
@@ -248,6 +258,18 @@ sub set_elevation{
 	my ($azimuth, $elevation)= $rot->get_position();
 	$rot->set_position($azimuth, $message);
     }
+}
+
+#set rig frequency
+sub set_freq(){
+}
+
+#set rig mode and passband
+sub set_mode(){
+}
+
+#set ptt to on or off
+sub set_ptt(){
 }
 
 sub test_directions{
