@@ -18,8 +18,7 @@ use Time::HiRes qw( usleep ualarm gettimeofday tv_interval nanosleep
                     stat lstat utime sleep);
 
 # mosquitto server
-#my $mqtt_host = "mqtt.vurk";
-my $mqtt_host = "mqtt.seskai.lan";
+my $mqtt_host = "mqtt.vurk";
 
 # MQTT topikai
 my $radio_topic_path="VURK/radio/FT847/";
@@ -53,7 +52,7 @@ my $rot_update_interval = 2; # in seconds
 my $print_interval      = 1; # print stats every n seconds
 
 # do not output anything - for use as a service
-my $quiet = 0; 
+my $quiet = 1; 
 my $is_a_service = 0; # die if something disconnects
 
 my $rig_in_use = 1;
@@ -88,7 +87,9 @@ if ($rot_in_use) { $rot=rot_open($rotator_type, $rotator_path); }
 my ($freq, $mode, $passband, $ptt, $azimuth, $elevation, $direction);
 my $rotator_connected = 0;
 my $rig_connected 	  = 0;
-my $counter=0;
+my $rig_timer;
+my $rot_timer;
+my $print_timer;
 
 # subscribe to rotator's "set" topic
 if ($rot_in_use) {
@@ -105,16 +106,17 @@ if ($rig_in_use){
     $mqtt->subscribe($radio_topic_path . "refresh", \&get_radio_state);
 }
 while($loop){
-    $counter++;
     $mqtt->tick();	# check if there are waiting subscribed messages 
 
     #get data only if rig is in use and connected
-    if ($rig_in_use && $rig->{state}->{comm_state}==1 &&($counter % $rig_update_interval == 0)){
+    if ($rig_in_use && $rig->{state}->{comm_state}==1 &&(tv_interval($rig_timer) >= $rig_update_interval)){
+	$rig_timer = [gettimeofday];
 	($freq, $mode, $passband, $ptt, $rig_connected) = get_radio_state($rig);
     }
     #get data only if rotator is in use and connected
-    if ($rot_in_use  &&($counter % $rot_update_interval == 0)){
+    if ($rot_in_use  &&(tv_interval($rot_timer) >= $rot_update_interval)){
 	if ($rot->{state}->{comm_state}==1){
+	    $rot_timer = [gettimeofday];
 	    ($azimuth, $elevation, $direction) = get_rotator_state($rot);
 	    $rotator_connected 	= $rot->{state}->{comm_state};
 	} else {
@@ -126,7 +128,8 @@ while($loop){
 	    }
     }
 
-    if (!$quiet && ($counter % $print_interval == 0)) {
+    if (!$quiet && (tv_interval($print_timer) >= $print_interval)) {
+	$print_timer = [gettimeofday];
         print "Connection states:\n";
 	print "Rig / Rotator : $rig_connected / $rotator_connected\n";
 	print "Rig / Rot host: $rig->{state}->{rigport}->{pathname}\n";
