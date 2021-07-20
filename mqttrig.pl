@@ -2,7 +2,7 @@
 #
 # Script gets data from rig and rotator using hamlib2, then publishes it to mqtt server.
 # Script gets data from mqtt server and sends to hamlib2 servers 
-# Vilius LY3FF, 2020
+# Vilius LY3FF, 2020-2021
 #
 # perl-hamlib required
 #
@@ -13,9 +13,7 @@ use lib '.';
 
 use Hamlib;
 use Net::MQTT::Simple;
-use Time::HiRes qw( usleep ualarm gettimeofday tv_interval nanosleep
-                    clock_gettime clock_getres clock_nanosleep clock
-                    stat lstat utime sleep);
+use Time::HiRes qw( gettimeofday tv_interval sleep );
 
 # mosquitto server
 my $mqtt_host = "mqtt.vurk";
@@ -24,7 +22,7 @@ my $mqtt_host = "mqtt.vurk";
 my $radio_topic_path="VURK/radio/FT847/";
 my $rotator_topic_path="VURK/rotator/vhf/";
 
-my $radio_set_topic_path="VURK/radio/FT847/";
+my $radio_set_topic_path="VURK/radio/FT847/set/";
 my $rotator_set_topic_path="VURK/rotator/vhf/set/";
 
 # rigctl -h
@@ -95,7 +93,7 @@ my $print_timer;
 if ($rot_in_use) {
     $mqtt->subscribe($rotator_set_topic_path . "azimuth",  \&set_azimuth);
     $mqtt->subscribe($rotator_set_topic_path . "elevation", \&set_elevation);
-    $mqtt->subscribe($rotator_topic_path . "refresh", \&get_rotator_state);
+    $mqtt->subscribe($rotator_topic_path . "refresh", \&refresh_rotator_state);
 }
 
 # subscribe to radio's "set" topic
@@ -103,7 +101,7 @@ if ($rig_in_use){
     $mqtt->subscribe($radio_set_topic_path . "frequency",  \&set_freq);
     $mqtt->subscribe($radio_set_topic_path . "mode", \&set_mode);
     $mqtt->subscribe($radio_set_topic_path . "ptt", \&set_ptt);
-    $mqtt->subscribe($radio_topic_path . "refresh", \&get_radio_state);
+    $mqtt->subscribe($radio_topic_path . "refresh", \&refresh_radio_state);
 }
 while($loop){
     $mqtt->tick();	# check if there are waiting subscribed messages 
@@ -205,9 +203,16 @@ sub get_rotator_state(){
     my $direction = &azimuth_to_direction($azimuth);
     mqtt_publish_rotator($azimuth, $elevation, $direction);
     return($azimuth, $elevation, $direction, $rotator_connected);
-
 }
 
+# mqtt refresh event
+sub refresh_radio_state(){
+    &get_radio_state($rig);
+}
+
+sub refresh_rotator_state(){
+    &get_rotator_state($rot);
+}
 
 #get_freq($rig)
 sub get_freq{
