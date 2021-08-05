@@ -310,7 +310,7 @@ sub set_freq(){
     if ((($message >= $min_vhf_frequency) && ($message <= $max_vhf_frequency)) ||
         (($message >- $min_uhf_frequency) && ($message <= $max_vhf_frequency)))
     {
-        $rig->set_freq($message);
+        $rig->set_freq($Hamlib::RIG_VFO_CURR, $message);
     }
 }
 
