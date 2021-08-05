@@ -290,8 +290,8 @@ sub set_elevation{
     my ($topic, $message) = @_;
     if (!$quiet) {print "$topic -> $message\n";}
     if (!( $message =~ /^-?\d+$/)) {
-	if (!$quiet) { print "'$message' is not a digit"; }
-	return;
+      if (!$quiet) { print "'$message' is not a digit"; }
+      return;
     }
     if (($message >= $min_elevation) && ($message <= $max_elevation)) {
 	my ($azimuth, $elevation)= $rot->get_position();
