@@ -40,6 +40,11 @@ my $max_azimuth = 360;
 my $min_elevation = 0;
 my $max_elevation = 90;
 
+my $min_vhf_frequency = 144000000;
+my $max_vhf_frequency = 146000000;
+
+my $min_uhf_frequency = 430000000;
+my $max_uhf_frequency = 440000000;
 
 my $radio_set_ptt_control_enabled = 0; #  if 1, then PTT control is enabled
 my $radio_set_ptt_on_enabled = 0; # (!!)  if set to 1, then ability to set PTT to ON will be enabled.
@@ -296,6 +301,17 @@ sub set_elevation{
 
 #set rig frequency
 sub set_freq(){
+    my ($topic, $message) = @_;
+    if (!$quiet) {print "$topic -> $message\n";}
+    if (!( $message =~ /^-?\d+$/)) {
+        if (!$quiet) { print "'$message' is not a digit"; }
+        return;
+    }
+    if ((($message >= $min_vhf_frequency) && ($message <= $max_vhf_frequency)) ||
+        (($message >- $min_uhf_frequency) && ($message <= $max_vhf_frequency)))
+    {
+        $rig->set_freq($Hamlib::RIG_VFO_CURR, $message);
+    }
 }
 
 #set rig mode and passband
