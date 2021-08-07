@@ -316,6 +316,26 @@ sub set_freq(){
 
 #set rig mode and passband
 sub set_mode(){
+    my ($topic, $message) = @_;
+    my $nmode;
+    my $npassband;
+    if (!$quiet) {print "$topic -> $message\n";}
+    if (! ($message =~ /^(AM|FM|CW|CWR|USB|LSB)$/i ) ) {
+        if (!$quiet) { 
+            print "'$message' is not a valid mode.";
+        }
+        return;
+    }
+    $message = uc $message;
+    
+    if ($message eq 'AM') { $nmode = $Hamlib::RIG_MODE_AM; }
+    elsif ($message eq 'FM') { $nmode = $Hamlib::RIG_MODE_FM; }
+    elsif ($message eq 'CW') { $nmode = $Hamlib::RIG_MODE_CW; }
+    elsif ($message eq 'CWR') { $nmode = $Hamlib::RIG_MODE_CWR; }
+    elsif ($message eq 'LSB') { $nmode = $Hamlib::RIG_MODE_LSB; }
+    elsif ($message eq 'USB') { $nmode = $Hamlib::RIG_MODE_USB; }
+    else { $nmode = $Hamlib::RIG_MODE_FM; }
+    $rig->set_mode($nmode, $rig->passband_normal($nmode) );
 }
 
 #set ptt to on or off
