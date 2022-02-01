@@ -2,7 +2,7 @@
 #
 # Script gets data from rig and rotator using hamlib2, then publishes it to mqtt server.
 # Script gets data from mqtt server and sends to hamlib2 servers 
-# Vilius LY3FF, 2020-2021
+# Vilius LY3FF, 2020-2022
 #
 # perl-hamlib required
 #
@@ -98,6 +98,7 @@ my $print_timer;
 if ($rot_in_use) {
     $mqtt->subscribe($rotator_set_topic_path . "azimuth",  \&set_azimuth);
     $mqtt->subscribe($rotator_set_topic_path . "elevation", \&set_elevation);
+    $mqtt->subscribe($rotator_set_topic_path . "azel", \&set_azimuth_elevation);
     $mqtt->subscribe($rotator_topic_path . "refresh", \&refresh_rotator_state);
 }
 
@@ -240,7 +241,19 @@ sub get_position{
     return($azimuth, $elevation);
 }
 
+sub is_elevation_valid{
+    my $elevation = shift;
+    my $is_valid = (($elevation >= $min_elevation) && ($elevation <= $max_elevation));
+    if (!$quiet && !$is_valid) { print "elevation $elevation is out of rage\n"; }
+    return ($is_valid);
+}
 
+sub is_azimuth_valid{
+    my $azimuth = shift;
+    my $is_valid = (($azimuth >= $min_azimuth) && ($azimuth   <= $max_azimuth));
+    if (!$quiet && !$is_valid) { print "azimuth $azimuth is out of rage\n"; }
+    return ($is_valid);
+}
 
 
 #    mqtt_publish_radio($freq, $mode, $passband, $ptt);
@@ -277,10 +290,10 @@ sub set_azimuth{
     my ($topic, $message) = @_;
     if (!$quiet) {print "$topic -> $message\n";}
     if (!( $message =~ /^-?\d+$/)) {
-	if (!$quiet) { print "'$message' is not a digit"; }
+	if (!$quiet) { print "'$message' is not a digit\n"; }
 	return;
     }  
-    if (($message >= $min_azimuth) && ($message <= $max_azimuth)) {
+    if (azimuth_is_valid($message)) {
 	my ($azimuth, $elevation)= $rot->get_position();
 	$rot->set_position($message, $elevation);
     }
@@ -290,21 +303,43 @@ sub set_elevation{
     my ($topic, $message) = @_;
     if (!$quiet) {print "$topic -> $message\n";}
     if (!( $message =~ /^-?\d+$/)) {
-	if (!$quiet) { print "'$message' is not a digit"; }
+	if (!$quiet) { print "'$message' is not a digit\n"; }
 	return;
     }
-    if (($message >= $min_elevation) && ($message <= $max_elevation)) {
+    if (elevation_is_valid ($message)) {
 	my ($azimuth, $elevation)= $rot->get_position();
 	$rot->set_position($azimuth, $message);
     }
 }
+
+sub set_azimuth_elevation{
+    my ($topic, $message) = @_;
+    if (!$quiet) {print "$topic -> $message\n";}
+    my ($azimuth, $elevation) = split(/,/, $message);
+
+    if (!defined $elevation || !defined $azimuth) {
+	if (!$quiet) { print "setting azimuth and elevation requires two digits separated by comma\n"; }
+	return;
+    };
+ 
+    if (! ( $azimuth =~ /^-?\d+$/) && ( $elevation =~ /^-?\d+$/) ) {
+	if (!$quiet) { print "'$message' is not two digits separated by comma\n"; }
+	return;
+    }
+    if   ( is_elevation_valid($elevation) && is_azimuth_valid($azimuth) )
+    {
+    if (!$quiet) {print "Moving antenna to az/el: $azimuth/$elevation\n";}
+	$rot->set_position($azimuth, $elevation);
+    }
+}
+
 
 #set rig frequency
 sub set_freq(){
     my ($topic, $message) = @_;
     if (!$quiet) {print "$topic -> $message\n";}
     if (!( $message =~ /^-?\d+$/)) {
-        if (!$quiet) { print "'$message' is not a digit"; }
+        if (!$quiet) { print "'$message' is not a digit\n"; }
         return;
     }
     if ((($message >= $min_vhf_frequency) && ($message <= $max_vhf_frequency)) ||
