@@ -19,15 +19,16 @@ use Time::HiRes qw( gettimeofday tv_interval sleep );
 my $mqtt_host = "mqtt.vurk";
 
 # MQTT topikai
-my $radio_topic_path="VURK/radio/FT847/";
+my $radio_topic_path="VURK/radio/IC9700/";
 my $rotator_topic_path="VURK/rotator/vhf/";
 
-my $radio_set_topic_path="VURK/radio/FT847/set/";
+my $radio_set_topic_path="VURK/radio/IC9700/set/";
 my $rotator_set_topic_path="VURK/rotator/vhf/set/";
 
 # rigctl -h
 my $radio_type = 2; 			# 2 - network
-my $radio_path = "127.0.0.1:4532"; 	# path or host
+#my $radio_path = "127.0.0.1:4532"; 	# path or host
+my $radio_path = "192.168.42.10:4532"; 	# path or host
 
 #rotctl -h
 my $rotator_type = 2; 			# 2 - network
@@ -55,10 +56,10 @@ my $rot_update_interval = 2; # in seconds
 my $print_interval      = 1; # print stats every n seconds
 
 # do not output anything - for use as a service
-my $quiet = 1; 
+my $quiet = 0; 
 my $is_a_service = 0; # die if something disconnects
 
-my $rig_in_use = 1;
+my $rig_in_use = 0;
 my $rot_in_use = 1;
 
 if ($radio_type   < 1) {$rig_in_use = 0;}
@@ -108,6 +109,11 @@ if ($rig_in_use){
     $mqtt->subscribe($radio_set_topic_path . "ptt", \&set_ptt);
     $mqtt->subscribe($radio_topic_path . "refresh", \&refresh_radio_state);
 }
+
+my $last_azimuth = 0;
+my $last_elevation = 0;
+my $last_rot_update = [gettimeofday];
+
 while($loop){
     $mqtt->tick();	# check if there are waiting subscribed messages 
 
@@ -121,7 +127,15 @@ while($loop){
 	if ($rot->{state}->{comm_state}==1){
 	    $rot_timer = [gettimeofday];
 	    ($azimuth, $elevation, $direction) = get_rotator_state($rot);
+	    
+	    # update only if values cahnged or timer expired
+	    if (($azimuth != $last_azimuth) || ($elevation != $last_elevation) || (tv_interval($last_rot_update) >= ($rot_update_interval * 3))) {
+		mqtt_publish_rotator($azimuth, $elevation, $direction);
+		$last_rot_update = $rot_timer;
+	    }
 	    $rotator_connected 	= $rot->{state}->{comm_state};
+	    $last_azimuth = $azimuth;
+	    $last_elevation = $elevation;
 	} else {
 	if ($is_a_service == 1) { die "Rotator disconnected, restart required"; }
 	 
@@ -206,17 +220,19 @@ sub get_rotator_state(){
     if (!$rotator_connected) {return};
     my ($azimuth, $elevation)	= get_position($rot);
     my $direction = &azimuth_to_direction($azimuth);
-    mqtt_publish_rotator($azimuth, $elevation, $direction);
+#    mqtt_publish_rotator($azimuth, $elevation, $direction);
     return($azimuth, $elevation, $direction, $rotator_connected);
 }
 
 # mqtt refresh event
 sub refresh_radio_state(){
-    &get_radio_state($rig);
+    my ($azimuth, $elevation, $direction, $rotator_connected) = &get_radio_state($rig);
+# todo    mqtt_publish_radio($freq, $mode, $passband, $ptt);
 }
 
 sub refresh_rotator_state(){
-    &get_rotator_state($rot);
+    my ($azimuth, $elevation, $direction, $rotator_connected) = &get_rotator_state($rot);
+    mqtt_publish_rotator($azimuth, $elevation, $direction);
 }
 
 #get_freq($rig)
@@ -304,11 +320,11 @@ sub set_freq(){
     my ($topic, $message) = @_;
     if (!$quiet) {print "$topic -> $message\n";}
     if (!( $message =~ /^-?\d+$/)) {
-        if (!$quiet) { print "'$message' is not a digit"; }
-        return;
+	if (!$quiet) { print "'$message' is not a digit"; }
+	return;
     }
-    if ((($message >= $min_vhf_frequency) && ($message <= $max_vhf_frequency)) ||
-        (($message >- $min_uhf_frequency) && ($message <= $max_vhf_frequency)))
+    if ((($message >= $min_vhf_frequency) && ($message <= $max_vhf_frequency)) || 
+	(($message >- $min_uhf_frequency) && ($message <= $max_vhf_frequency))) 
     {
         $rig->set_freq($Hamlib::RIG_VFO_CURR, $message);
     }
